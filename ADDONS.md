@@ -11,7 +11,7 @@ Improvements to `EVAL_HARNESS_DESIGN.md` that are agreed but not applied yet.
 **Do it when:** the doc feeds a paper/report or is shared on GitHub. Until then, plain-text formulas stay easier to read in the raw `.md`.
 **Cost:** raw source gets harder to read; some viewers show the raw `$$…$$`.
 
-### Ready-to-paste replacements (§13.2–13.3, synced with the post-review formulas)
+### Ready-to-paste replacements (§13.2–13.3, synced with the merged plan)
 
 **Seed fusion (RRF)**
 $$
@@ -20,7 +20,7 @@ $$
 
 **Edge weights and transition**
 $$
-w(e) = \tau_{\text{kind}(e)} \cdot c(e), \qquad P(u \to v) = \frac{w(u,v)}{\sum_x w(u,x)}
+w(u \to v) = \tau_{\text{kind}(e)} \cdot c(e), \qquad w(v \to u) = \rho \cdot \tau_{\text{kind}(e)} \cdot c(e), \qquad P(u \to v) = \frac{w(u,v)}{\sum_x w(u,x)}
 $$
 
 **Personalized PageRank (fixed α)**
@@ -28,31 +28,32 @@ $$
 \pi_s = \alpha \, \hat{s}_0 + (1 - \alpha)\, P^{\top} \pi_s, \qquad \alpha = 0.25
 $$
 
-**Hub correction (lift), smoothed and normalized per query**
+**Hub correction, normalized per query**
 $$
-\text{lift}(v) = \frac{\pi_s(v)}{\bigl(\pi_g(v) + \varepsilon\bigr)^{\beta}}, \qquad
-\text{rel}(v) = \frac{\text{lift}(v)}{\max_u \text{lift}(u)}, \qquad \varepsilon = \tfrac{1}{N}
-$$
-
-**Chunk score**
-$$
-\text{rel}(c) = \text{rel}\bigl(\text{sym}(c)\bigr) \cdot \bigl(0.5 + 0.5\,\text{bm25}_{\text{norm}}(c)\bigr)
+h(v) = \max\bigl(N \cdot \pi_g(v),\ 1\bigr), \qquad
+\text{lift}(v) = \frac{\pi_s(v)}{h(v)^{\beta}}, \qquad
+\text{rel}(v) = \frac{\text{lift}(v)}{\max_u \text{lift}(u)}
 $$
 
-**Marginal value over the held level**
+**Value of each step up the ladder**
 $$
-\Delta v(u, \ell) = \text{rel}(u) \cdot \max\bigl(0,\ g(\ell) - g(h_u)\bigr)
+v(u, \text{handle}) = \text{rel}(u) \cdot g_h, \qquad
+v(u, L_1) = \text{rel}(u) \cdot \max\bigl(g_1 - g_{\text{held}}(u),\ 0\bigr)
+$$
+$$
+v(\text{chunk}) = \text{rel}(u) \cdot \bigl(1 - \max(g_1, g_{\text{held}}(u))\bigr) \cdot \text{share}(\text{chunk}), \qquad
+\text{share}(\text{chunk}) = \frac{1 + q}{\sum (1 + q)}
 $$
 
-**Objective**
+**Objective (heuristic)**
 $$
-\max_{\{\ell_u\}} \sum_u \Bigl[ \Delta v(u, \ell_u) - \lambda \, c(u, \ell_u) \Bigr]
-\quad \text{s.t.} \quad \sum_u c(u, \ell_u) \le B
+\max \sum \bigl[ v - \lambda \, c \bigr]
+\quad \text{s.t.} \quad \sum c \le B
 $$
 
 **Greedy solver stop rule**
 $$
-\text{pick } \arg\max \frac{\Delta v}{\Delta c} \quad \text{until} \quad \max \frac{\Delta v}{\Delta c} < \lambda \ \text{ or } \ \sum c = B
+\text{take items in descending } \frac{\Delta v}{\Delta c}, \text{ stop at the first with } \frac{\Delta v}{\Delta c} < \lambda, \text{ skip any that would exceed } B
 $$
 
 ### How to apply
