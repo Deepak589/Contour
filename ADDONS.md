@@ -11,7 +11,7 @@ Improvements to `EVAL_HARNESS_DESIGN.md` that are agreed but not applied yet.
 **Do it when:** the doc feeds a paper/report or is shared on GitHub. Until then, plain-text formulas stay easier to read in the raw `.md`.
 **Cost:** raw source gets harder to read; some viewers show the raw `$$…$$`.
 
-### Ready-to-paste replacements (§13.2–13.3)
+### Ready-to-paste replacements (§13.2–13.3, synced with the post-review formulas)
 
 **Seed fusion (RRF)**
 $$
@@ -28,19 +28,25 @@ $$
 \pi_s = \alpha \, \hat{s}_0 + (1 - \alpha)\, P^{\top} \pi_s, \qquad \alpha = 0.25
 $$
 
-**Hub correction (lift)**
+**Hub correction (lift), smoothed and normalized per query**
 $$
-\text{rel}(v) = \frac{\pi_s(v)}{\pi_g(v)^{\beta}}, \qquad \beta \in [0, 1]
+\text{lift}(v) = \frac{\pi_s(v)}{\bigl(\pi_g(v) + \varepsilon\bigr)^{\beta}}, \qquad
+\text{rel}(v) = \frac{\text{lift}(v)}{\max_u \text{lift}(u)}, \qquad \varepsilon = \tfrac{1}{N}
 $$
 
-**Value with ledger term**
+**Chunk score**
 $$
-v(u, \ell) = \text{rel}(u) \cdot g(\ell) \cdot \bigl(1 - \sigma(u, \ell)\bigr)
+\text{rel}(c) = \text{rel}\bigl(\text{sym}(c)\bigr) \cdot \bigl(0.5 + 0.5\,\text{bm25}_{\text{norm}}(c)\bigr)
+$$
+
+**Marginal value over the held level**
+$$
+\Delta v(u, \ell) = \text{rel}(u) \cdot \max\bigl(0,\ g(\ell) - g(h_u)\bigr)
 $$
 
 **Objective**
 $$
-\max_{\{\ell_u\}} \sum_u \Bigl[ v(u, \ell_u) - \lambda \, c(u, \ell_u) \Bigr]
+\max_{\{\ell_u\}} \sum_u \Bigl[ \Delta v(u, \ell_u) - \lambda \, c(u, \ell_u) \Bigr]
 \quad \text{s.t.} \quad \sum_u c(u, \ell_u) \le B
 $$
 
