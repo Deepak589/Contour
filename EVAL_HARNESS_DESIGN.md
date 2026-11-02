@@ -31,6 +31,9 @@
 | D13 | Variant F maths corrected (§13): normalised `rel`, reverse edges, marginal ledger value, no L3 in the selector, no ½-approximation claim, 9 fitted values | The earlier formulas had scale, ledger and solver defects. |
 | D14 | Additive arm (A+F0, A+F) runs on `test`; F0 keeps upstream's tools and text | Agents normally keep grep, and "unmodified" must mean unmodified. |
 | D15 | Merkle re-index moved to Future Work | Experiments use immutable per-commit indexes. A per-file content-hash cache is enough. |
+| D16 | `rel` is normalised per query to (0, 1] | Otherwise a broad query spreads `π_s` thinly and can fall below λ everywhere, returning only the floor handles. |
+| D17 | `dev150` is repo-disjoint from `test_core` by default | Fitted parameters can't learn test repos. S0-3 checks the pool can support it; the fallback is `holdout_repos`. |
+| D18 | Model claims are limited to Sonnet 5.5 and Haiku 5.5 | Opus 5.5 and Fable 5.1 aren't tested, so results say nothing about them. |
 
 ---
 
@@ -60,7 +63,7 @@
 |---|---|
 | **Index variant** | A `grep_read` · B `bm25` · C `embeddings` (BGE-M3, exact search) · D `ast_graph` (raw graph tools over CodeGraph's DB) · E `graph_summaries` (D + LLM module summaries) · F0 `codegraph_v1` (unmodified) · F0+dedup · **F `multires_v2`** |
 | **Token budget** (F only) | 2k · 4k (default) · 8k · 16k per `explore_v2` call |
-| **Model** | `claude-sonnet-5-5` (primary) · `claude-haiku-5-5` (small) |
+| **Model** | `claude-sonnet-5-5` (primary) · `claude-haiku-5-5` (small). Opus 5.5 and Fable 5.1 are not tested, and claims are limited to these two models |
 | **Index freshness** | `fresh` · `stale_k20` (index frozen 20 first-parent commits before the task commit) |
 
 **Controlled:** system prompt, agent loop, run budget, `read_file`, `grep` caps, `submit_locations`, effort, API version, SDK version.
@@ -85,6 +88,8 @@
 | **Total** | | | | | | | **13,600** |
 
 Also run: the memory-probe gate (one no-tool request per task per model, through the Message Batches API).
+
+**Why the additive block runs on `test_sub`:** it is the realistic agent setup, and CodeGraph's FTS table has no body or string-literal column (`src/db/schema.sql:117`), so issues quoting an error message favour grep. `dev50` alone wouldn't show this on tasks F wasn't tuned against.
 
 ### Hypotheses
 | ID | Hypothesis | Status |
@@ -112,10 +117,10 @@ Also run: the memory-probe gate (one no-tool request per task per model, through
 Neither `czlll` dataset page lists a license, and sampled rows look Python-only. Sprint 0 confirms overlap, languages, licensing and each model's training cutoff. **v1 is Python-only**, so results aren't confounded by per-language extractor quality.
 
 **Splits** (frozen in a hashed manifest at Sprint 2):
-- `dev150`: stratified; used for offline fitting only.
+- `dev150`: stratified; used for offline fitting only. **Repo-disjoint from `test_core` by default.**
 - `dev50` ⊂ `dev150`: the only tasks used for live agent runs during development.
-- `holdout_repos`: at least 2 repos with at least 30 tasks combined, absent from `dev150`; reported as an `unseen_repo` slice.
-- `test_core`: 600 tasks = 500 benchmark + 100 post-cutoff. Disjoint from `dev150`.
+- `holdout_repos` (fallback): used only if S0-3 shows a repo-disjoint split leaves too few tasks. Then `dev150` may share repos with `test_core`, except for at least 2 repos with at least 30 tasks combined, which are reported as an `unseen_repo` slice.
+- `test_core`: 600 tasks = 500 benchmark + 100 post-cutoff. Always task-disjoint from `dev150`.
 - `test_sub` ⊂ `test_core`: 150 stratified tasks.
 - `stale100` ⊂ `test_core`: up to 100 tasks with at least one gold file changed in the 20-commit window; if fewer exist, use all and record the count.
 
@@ -139,7 +144,7 @@ Neither `czlll` dataset page lists a license, and sampled rows look Python-only.
 - **Secondary accuracy:** file Acc@k, function Acc@k (k = 1, 5, 10), MRR.
 - **Delivered tokens:** tool-result tokens plus model output tokens, including thinking. This excludes re-sent context, so it doesn't grow quadratically.
 - **Exposure:** a tool output exposes a gold location if it contains that location's signature line, or at least 3 consecutive non-blank source lines from it (all lines if shorter). Matching ignores whitespace, so it works on any variant without tool cooperation. A path-only handle doesn't count.
-- **Tokens-to-localization `T_loc` (primary cost):** delivered tokens up to the first exposure of a gold location that is also in the final top 5. Otherwise the run is censored at the run cap (90k). Compared as restricted means, with the localized-by-token curve plotted.
+- **Tokens-to-localization `T_loc` (primary cost):** delivered tokens up to the first exposure of a gold location that is also in the final top 5. Otherwise the run is censored at the run cap (90k), not dropped. Compared as restricted means; the localized-by-token curve and its median are also reported.
 - **Secondary cost:** `T_body` (first body exposure), `T_mention` (first path mention, as a sensitivity check), delivered tokens to final answer, tool calls, wall time, and billed cost.
 - **Fallback:** `read_file` calls and tokens after the first index call.
 - **recall@token-budget** (F only): gold recall of a single `explore_v2` call at each budget.
@@ -361,6 +366,7 @@ class RunResult(BaseModel, frozen=True):
     wall_time_s: float
     index_calls: int
     read_file_calls: int
+    read_file_calls_after_index: int
     read_file_tokens_after_index: int
     grep_calls: int
     retrieval_tools: int
@@ -532,7 +538,7 @@ Contour/
 - **Variant F:** recall@budget, early-stop rate, tokens used ÷ B, expansion rate, ledger hit rate, re-expansion rate, level mix.
 - **Adoption:** index-call rate. Runs that never query the index are flagged and analysed separately.
 - **Health:** refusal, `max_tokens`, timeout and infra-failure rates per variant. Differences are findings, not noise.
-- **Slices:** `multi_hop`, `repo_size`, model, freshness, `paraphrase`, `explicit_path`, `memorized`, post-cutoff, `unseen_repo`, `category`. Slices under 30 tasks are descriptive only.
+- **Slices:** `multi_hop`, `repo_size`, model, freshness, `paraphrase`, `explicit_path`, `memorized`, post-cutoff, `category`, and `unseen_repo` if the fallback split is used. Slices under 30 tasks are descriptive only.
 
 ### Inference
 - **Unit:** task. Replicates are averaged within a task before comparison.
@@ -600,8 +606,10 @@ The earlier 10-week plan had no room for a data pipeline, offline gates or a reh
 | Too few tasks for the claim | 600 tasks; margin chosen from measured discordance (§9) |
 | Few repos dominate results | Repo-clustered bootstrap; leave-one-repo-out; repo-weighted sensitivity |
 | Peeking during S6 | The live monitor shows only ops metrics, not accuracy by variant; matrix fixed at G3 |
-| Parameters overfit | Offline fit on `dev150`; leave-one-repo-out; `unseen_repo` slice; frozen before S6 |
-| F0 silently self-heals in the stale arm | DB hash test on every stale run; a failure voids the run |
+| Parameters overfit | Offline fit on repo-disjoint `dev150`; leave-one-repo-out; frozen before S6 |
+| F0 silently self-heals in the stale arm | DB hash test on every stale run, for every indexed variant; a failure voids the run |
+| API rejects run settings | No sampling params; explicit effort; fallbacks off; server-side context editing for H8; request-shape tests |
+| Unfair comparison across variants | Same prompt, loop, budget and answer format; tool count and prompt overhead logged; additive arm; F0 also run with dedup on |
 | Refusals differ by variant (`cyber` and similar classifiers) | Record `stop_reason: refusal`; fallbacks off; sensitivity excludes them |
 | Ledger refers to code the agent has lost | Every reference has an `expand` handle; `reset_ledger`; re-expansion rate; `ledger: false` ablation |
 | Real MCP hosts have no agent-context ID | v1 ledger scope = one server process = one run. Claim is limited to the mini agent; real hosts are Future Work |
@@ -619,14 +627,14 @@ The earlier 10-week plan had no room for a data pipeline, offline gates or a reh
 
 No test in CI calls the live API. Live checks are `just smoke`, run by hand.
 
-- **Unit:** every grader, decorator, gold parser, tag, matrix expansion and pricing function.
+- **Unit:** every grader, decorator, gold parser, tag, matrix expansion and pricing function. Graders explicitly cover `path::symbol` answers against file gold, and hit-any vs hit-all on a multi-hop toy task.
 - **Contract:** every registered plugin satisfies its Protocol; every tool server lists valid schemas.
 - **Golden run:** a scripted fake agent on a toy repo yields an exact `RunResult`.
 - **Replay:** `replay` mode gives an identical trajectory hash.
 - **Replicate isolation:** two replicates in `record` mode never share a response.
 - **Statistics:** on simulated data with known effects, bootstrap coverage is near nominal and Holm matches a hand-worked example.
 - **Exposure detector:** handle-only output doesn't count; signature and body do; whitespace changes don't matter.
-- **Frozen index:** DB SHA-256 is unchanged after a stale run, and the stale commit's changes are absent from results.
+- **Frozen index:** for every indexed variant including F0, DB SHA-256 is unchanged after a stale run, and the stale commit's changes are absent from results.
 - **API request shape:** no sampling params; `effort` always set; `tool_choice` is `auto`; fallbacks absent.
 - **Variant F property tests (Hypothesis):**
   - Estimated tokens never exceed `budget_tokens`; live audit stays within 5%.
@@ -636,6 +644,7 @@ No test in CI calls the live API. Live checks are `just smoke`, run by hand.
   - Stable IDs survive a line-shifting edit.
   - Each PageRank vector sums to 1, including with dangling nodes.
   - Duplicating the graph as a disconnected copy leaves `h(v)` unchanged.
+  - The top unit of every query has `rel` = 1, and all others are in (0, 1].
   - Every reference resolves through `expand`.
   - Changed content invalidates its ledger entry.
   - A container and its children never both emit body content.
@@ -685,7 +694,7 @@ Side database per (repo, commit), keyed to CodeGraph node rows:
 - **Stable symbol ID:** `hash(file, kind, qualified_name, ordinal)`. CodeGraph's node IDs change on line shifts, so the mapping is rebuilt per commit.
 - **Body hash:** per symbol and chunk; drives the ledger and a per-file build cache.
 - **Global PageRank:** centrality per node.
-- **FTS columns:** split identifiers, signature, docstring and **string literals** from the body. Without literals, an issue quoting an error message gives F nothing to match, since F has no grep.
+- **FTS columns:** split identifiers, signature, docstring and **string literals** from the body. Without literals, an issue quoting an error message gives F nothing to match, since F has no grep. CodeGraph's own FTS table covers names, docstring and signature only.
 
 Delivery reads text from the checkout using stored ranges. If a stored hash no longer matches in the stale condition, the unit is marked `[stale]`.
 
@@ -717,9 +726,11 @@ Delivery reads text from the checkout using stored ranges. If a stored hash no l
 
 3. **Hub correction:**
 
-   `h(v) = max(N · π_g(v), 1)` and `rel(v) = π_s(v) / h(v)^β`, β ∈ [0, 1]
+   `h(v) = max(N · π_g(v), 1)`, `lift(v) = π_s(v) / h(v)^β`, β ∈ [0, 1]
 
-   `π_g` is global PageRank (same `P`, uniform restart) and N is the node count. `N · π_g` has mean 1 on any graph, so λ doesn't drift with repo size as a raw `π_s / π_g^β` would. The floor at 1 means only above-average hubs are demoted, and obscure leaves aren't inflated. β = 0 recovers plain PPR.
+   `rel(v) = lift(v) / max_u lift(u)`, so `rel` ∈ (0, 1] for each query
+
+   `π_g` is global PageRank (same `P`, uniform restart) and N is the node count. `N · π_g` has mean 1 on any graph, so λ doesn't drift with repo size as a raw `π_s / π_g^β` would. The floor at 1 means only above-average hubs are demoted, and obscure leaves aren't inflated. Per-query normalisation stops a broad query, whose `π_s` is spread thinly, from falling below λ everywhere. β = 0 recovers plain PPR up to that scale.
 
 ### 13.3 Selection
 Each symbol moves up the ladder `skip → handle → L1 → L2`.
@@ -802,6 +813,7 @@ SWE-bench Lite, Loc-Bench and post-cutoff tasks only. RepoQA and CoIR are option
 | Confidence values are fixed per resolver, not calibrated | Treat as a prior; sensitivity reported |
 | Whole-graph PPR is too slow on large repos | Measure at S0 on the largest graph; sparse CSR cached per commit; target p95 < 500 ms; else cap iterations and report it |
 | Token estimate drifts from actual | Upper-quantile ratio; live audit within 5% at G2.5 |
+| Lexical blind spot on quoted error messages | F indexes string literals (§13.1); CodeGraph doesn't; the additive block measures what grep still adds |
 
 ### 13.8 Out of scope for v2
 L0 LLM summaries · learned edge weights · embedding fine-tuning · question-type classifier · lazy reference resolution · SCIP-resolved edges · Merkle re-index.
@@ -912,7 +924,7 @@ S0 spikes → harness → data + gold → A, F0 → stats → G1 baselines
 |---|---|---|---|---|
 | S0-1 | Scaffold: uv, Ruff, mypy, pytest, CI, just | A | 1 | CI green on `dev1` |
 | S0-2 | API spike: request shape, effort, repeat variance, Models API, `count_tokens` limits, rate limits, context editing | A | 2 | Script and notes in `docs/`; all rules in §14 confirmed or amended |
-| S0-3 | Dataset census: overlap, languages, repos, `multi_hop` and `paraphrase` counts, post-cutoff supply, stale eligibility, licenses, model cutoffs | A | 2 | Census table; pool ≥ 650 + 100 post-cutoff, or plan amended |
+| S0-3 | Dataset census: overlap, languages, repos, `multi_hop` and `paraphrase` counts, post-cutoff supply, stale eligibility, licenses, model cutoffs | A | 2 | Census table; pool supports a repo-disjoint `dev150` + `test_core` (750 tasks, 100 of them post-cutoff), or G0 switches to the `holdout_repos` fallback |
 | S0-4 | CodeGraph spike: pinned build in Node 22 container; index a large Python repo; MCP over stdio; frozen-index route | B | 2 | DB hash unchanged after a stale session |
 | S0-5 | Schema spike: read DB from Python; edge metadata; PPR latency on the largest graph; verify §13.0 open items | B | 2 | Latency recorded; items confirmed or dropped |
 | S0-6 | Related work notes, time-boxed: RepoGraph, LocAgent, cAST, Agentless | B | 1 | `docs/related_work.md` |
