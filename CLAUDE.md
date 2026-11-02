@@ -34,12 +34,12 @@ Full design: `EVAL_HARNESS_DESIGN.md` (source of truth). Agreed-but-unapplied ed
 
 ## Commands
 ```bash
-uv sync                      # install
-uv run pytest                # tests
-uv run ruff check . && uv run ruff format .
-uv run mypy evalh
+uv sync                      # install (after every pull that changes uv.lock)
+just check                   # ruff + ruff format --check + mypy strict + pytest — must pass before commit
+just fmt                     # auto-format + auto-fix
+just test                    # pytest only
 ```
-(Update this block when `justfile` lands in S0-1.)
+Ruff skips `.claude/` and `*.md`. CI runs the same checks with no API key.
 
 ## Claude API rules (every request)
 - **Never send** `temperature`, `top_p`, `top_k` — 400 on Sonnet 5.5 / Haiku 5.5.
