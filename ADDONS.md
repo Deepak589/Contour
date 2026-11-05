@@ -96,7 +96,7 @@ Edit the lines above in `EVAL_HARNESS_DESIGN.md`. Check that every section menti
 
 ## 3. S0-3 results: post-cutoff source, dataset facts, gold
 
-**Status:** proposed by A, needs B's sign-off. Evidence: `docs/spikes/s0-3.md`, `scripts/s0_3_census.py`.
+**Status:** proposed by A, signed off by B 2026-11-05 (with a note for S2-2, below). Evidence: `docs/spikes/s0-3.md`, `scripts/s0_3_census.py`.
 **Why:** the census showed the post-cutoff plan can't work as written, and a few dataset facts in §1a are wrong.
 
 ### Edits
@@ -121,3 +121,10 @@ Edit the lines above in `EVAL_HARNESS_DESIGN.md`. Check that every section menti
 
 ### How to apply
 Edit §1a, §16 S2 and the readiness facts in §17. Update `CLAUDE.md` rule 8 only if the split rule changes.
+
+### B's note for S2-2 (not a blocker for these edits)
+The S0-3 feasibility split only lets repos with ≤ 25 tasks into `dev150` (`DEV_MAX_REPO_TASKS`), so every repo with many tasks
+(conan, django, matplotlib, …, also big codebases) lands in `test_core`. F's parameters are fitted on `dev150`, and graph features such as
+PageRank scale with repo size, so F would be fitted on small graphs and tested on large ones. When S2-2 freezes the real
+split, stratify `dev150` by repo size (e.g. node-count bands from S2-4) instead of excluding large repos, or report a
+`repo_size` slice so a size mismatch is visible.
