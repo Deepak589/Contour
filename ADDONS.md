@@ -91,3 +91,33 @@ Pick one, add a row to the §0 decision table, and record `CODEGRAPH_MCP_TOOLS` 
 
 ### How to apply
 Edit the lines above in `EVAL_HARNESS_DESIGN.md`. Check that every section mentioning the patch route or "Node 22" still agrees.
+
+---
+
+## 3. S0-3 results: post-cutoff source, dataset facts, gold
+
+**Status:** proposed by A, needs B's sign-off. Evidence: `docs/spikes/s0-3.md`, `scripts/s0_3_census.py`.
+**Why:** the census showed the post-cutoff plan can't work as written, and a few dataset facts in §1a are wrong.
+
+### Edits
+
+1. **§1a Datasets, SWE-bench-Live row.** "1,319 tasks / 93 repos in the initial paper" → `full` split: 1,888 tasks, 223 repos,
+   MIT. Its Python tasks end on **2025-09-02**, so it is a benchmark pool, **not** a post-cutoff source.
+   `SWE-bench-Live/MultiLang` has 2026 tasks but no Python, so it is out of v1.
+2. **§1a post-cutoff slice.** Both models' training data cutoff is **Jun 2026** (models overview, read 2026-11-05), so
+   no public dataset has post-cutoff Python tasks. Replace the source with **self-collected tasks**: Python issue → merged PR pairs
+   from pool repos, merged on or after 2026-07-01, gold from the patch. Localization needs no test harness, so this is cheap.
+   GitHub search shows 1,364 merged PRs linked to issues in the 20 largest pool repos since 2026-07-01 (upper bound;
+   language, source-only and linked-issue quality filters still apply). Add as an S1/S2 task, about 2 pd, owner A.
+3. **§1a Datasets, Loc-Bench row.** All 560 tasks edit at least one pre-existing `.py` file; 467 touch only `.py` files.
+   The earlier "about 85 non-Python" note was wrong.
+4. **§1a Tags / stratification.** SWE-bench Lite has **no** `multi_hop` tasks (it is single-file by construction).
+   `multi_hop` comes from Loc-Bench and SWE-bench-Live; about 30% of the pool overall.
+5. **§16 S2-1 gold.** Patch-derived gold files equal `edit_functions` files on 95.4% of the 834 czlll tasks; the other 4.6%
+   are patches that also touch `.py` files outside any function. Rule: **gold files come from the patch**; function gold
+   comes from `edit_functions` where present and from base-commit parsing (S2-1) for SWE-bench-Live.
+6. **§0 / §14 API rules.** The models overview lists default effort as Sonnet 5.5 `high`, Haiku 5.5 `medium`. This
+   confirms D1 (defaults differ, so effort is set explicitly).
+
+### How to apply
+Edit §1a, §16 S2 and the readiness facts in §17. Update `CLAUDE.md` rule 8 only if the split rule changes.
