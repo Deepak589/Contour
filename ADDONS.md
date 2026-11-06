@@ -128,3 +128,29 @@ The S0-3 feasibility split only lets repos with ≤ 25 tasks into `dev150` (`DEV
 PageRank scale with repo size, so F would be fitted on small graphs and tested on large ones. When S2-2 freezes the real
 split, stratify `dev150` by repo size (e.g. node-count bands from S2-4) instead of excluding large repos, or report a
 `repo_size` slice so a size mismatch is visible.
+
+---
+
+## 4. S0-5 results: DB access, Python edge kinds, confidence, PPR latency
+
+**Status:** proposed by B, needs A's sign-off. Evidence: `docs/spikes/s0-5.md`, `scripts/s0_5_schema.py`.
+**Why:** S0-5 confirmed option A (Python service over `codegraph.db`) and found two §13 facts that are wrong for Python.
+
+### Edits
+
+1. **§13.0 "Not yet verified" note.** Dedup's 8-call memory is confirmed (`src/mcp/explore-session-state.ts:137`).
+   Confidence range is **0.4–0.95**, not 0.6–0.95, and is a per-resolver label rather than a calibrated probability
+   (`src/resolution/name-matcher.ts:6444`, `:25369`). Drop the Linux-kernel index time (v1 is Python only).
+2. **§13.2 τ table.** Add: Python graphs use 7 of the 13 kinds (`contains`, `calls`, `instantiates`, `imports`,
+   `references`, `extends`, `decorates`). For Python, hierarchy = `extends`; type use = `instantiates` + `decorates`;
+   reference = `imports` + `references`. Keep the `c(e) = 1` ablation; most edges are 0.9.
+3. **§13.1 Index.** F opens `codegraph.db` with `sqlite3` URI `mode=ro&immutable=1`. It works on the S0-4 frozen
+   `:ro` bind mount and leaves the SHA-256 unchanged.
+4. **§16 G0 / §17.** "PPR latency acceptable": met. Whole-graph PPR p95 351 ms on home-assistant/core (411k nodes,
+   1.19M edges), 99–170 ms on django, sympy and transformers. numpy only, one thread.
+5. **§1a pool filter / S2-2.** Exclude repos that CodeGraph can't index on the study machine or whose graph exceeds
+   about 1.5M edges. Today that is azure-sdk-for-python (3 Python tasks): `init` failed after 425 s on an 8 GB Docker VM,
+   and its partial graph already gives PPR p95 457 ms. Same filter for both arms, applied before the split.
+
+### How to apply
+Edit §13.0, §13.1, §13.2, §1a (pool filter) and the G0 readiness facts in §17. No change to `CLAUDE.md`.

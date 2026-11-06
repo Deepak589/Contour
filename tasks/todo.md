@@ -1,3 +1,34 @@
+# S0-5 Schema spike (owner B, due G0 2026-11-06)
+
+Goal (§16 S0-5): read CodeGraph's DB from Python; edge metadata; PPR latency on the largest graph; confirm or drop
+the §13.0 open items. G0 needs "PPR latency acceptable" (target p95 < 500 ms per query). Decides option A (Python service).
+
+Output: `scripts/s0_5_schema.py` (stdlib sqlite3 + numpy) + `docs/spikes/s0-5.md`. Proposed design edits → `ADDONS.md` §4.
+
+## Early probe (Django `1860f0a3f4`)
+- Open read-only needs `file:...?immutable=1` (plain `-readonly` fails on the pristine copy: no `-shm`).
+- Python graph has **7** edge kinds (contains, calls, instantiates, imports, references, extends, decorates), not 13.
+- `metadata.confidence` present on 135,334 / 194,344 edges; values 0.4–0.95 (not 0.6–0.95); absent → 1.
+
+## Progress (2026-11-05)
+Steps 1–7 done; results in `docs/spikes/s0-5.md`, proposed edits in `ADDONS.md` §4. Largest graph measured:
+home-assistant/core, PPR p95 351 ms (PASS). azure-sdk-for-python index failed (likely memory); proposed size cap.
+
+## Steps
+1. Read DB from Python via `sqlite3` URI `mode=ro&immutable=1` → verify: node/edge counts match S0-4 (62,854 / 194,344); DB SHA-256 unchanged after.
+2. Schema notes: nodes/edges/files columns F needs (id, kind, file, line range, qualified name, signature, docstring); FTS table coverage → verify: table in `s0-5.md` with `schema.sql:line` at `f72c9d2`.
+3. Edge metadata: kinds, confidence distribution per kind, other metadata keys; check where confidence is set in source → verify: per-kind table + `file:line` refs.
+4. Pick largest graphs: list pool repos (HF `repo` column only), index the 3 likely-largest (e.g. sympy, scikit-learn, matplotlib; adjust after listing) in the Node 22 container → verify: node/edge counts per repo; largest named.
+5. PPR timing: numpy power iteration (bincount matvec), α = 0.25, τ/ρ/confidence weights, tol 1e-6; global PageRank once; 100 random seed sets of 50 nodes → verify: p50/p95/max ms and iterations on the largest graph; π sums to 1.
+6. §13.0 open items: dedup "8-call memory" (`explore-dedup.ts`), confidence range, Linux-kernel index time → verify: each confirmed with `file:line` or dropped.
+7. Write `docs/spikes/s0-5.md` + `ADDONS.md` §4 (proposed, needs A's sign-off) → verify: `just check` passes; numbers reproducible by the script.
+
+## Decisions to confirm
+- Add `numpy` as direct dep (`uv add numpy`; already installed via `datasets`). No scipy — bincount matvec is enough.
+- Local `~/codegraph` clone is checked out at `a0174cee`; read source at `f72c9d2` via `git show`, don't change the checkout.
+
+---
+
 # S0-3 Dataset census (owner A, due G0 2026-11-06)
 
 Goal (§16 S0-3): show whether the pool supports a repo-disjoint `dev150` + `test_core` (750 Python tasks, 100 post-cutoff), or switch to the `holdout_repos` fallback at G0.
