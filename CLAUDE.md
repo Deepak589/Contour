@@ -5,7 +5,11 @@ Full design: `EVAL_HARNESS_DESIGN.md` (source of truth). Agreed-but-unapplied ed
 
 ## Team & branches
 - 2 devs. Roles per §16: **A** = harness + experiments, **B** = indexes + Variant F.
-- Don't work on `main` directly. Use feature branches (`dev-D`, `dev1`, `s0-x-*`); merge via PR.
+- Don't work on `main` directly. **Both devs work on `dev-D`**; merge to `main` via PR.
+- `git pull` before starting and again before every push (`pull.rebase true`, so no merge commits).
+  Conflict → fix, `git add`, `git rebase --continue` (or `--abort`). `uv sync` after `uv.lock` changes.
+- Run `just check` before every push. Flag edits to shared files (`interfaces.py`, `schemas.py`, design doc).
+- Second local worktree needs its own short-lived branch (git won't check out `dev-D` twice); merge it back.
 - Sprint 0 runs 2026-11-02 → 11-06. Check the gate (G0…G5) before starting the next sprint's work.
 
 ## How I work (style)
