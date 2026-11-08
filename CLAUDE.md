@@ -41,7 +41,7 @@ just test                    # pytest only
 ```
 Ruff skips `.claude/` and `*.md`. CI runs the same checks with no API key.
 
-## Claude API rules (every request)
+## Claude API rules (every Claude request)
 - **Never send** `temperature`, `top_p`, `top_k` — 400 on Sonnet 5.5 / Haiku 5.5.
 - Always set `output_config={"effort": "medium"}`; defaults differ per model.
 - `tool_choice` stays `auto`. No server-side fallbacks.
@@ -50,6 +50,13 @@ Ruff skips `.claude/` and `*.md`. CI runs the same checks with no API key.
 - Check `stop_reason` for `refusal` / `max_tokens` before reading content.
 - `seed` is a replicate label only; the API has no seed param.
 - Models: `claude-sonnet-5-5` (primary), `claude-haiku-5-5` (small). Claims limited to these.
+
+## LLM providers (D19–D21)
+- All model calls go through the `LLMClient` protocol (`evalh/infra/llm/`). Agent, graders and store see only neutral types.
+- **Dev backend: Mistral** (pinned model ID + `mistralai` SDK version). Use it on `dev50` to build and debug. Mistral runs are never reported as results.
+- **Final runs:** the pinned Claude models above. One results set never mixes providers.
+- Delivered tokens and `T_loc` use one fixed reference tokenizer for every provider; provider usage is for billing only.
+- Provider, model ID and SDK version are part of `config_hash`.
 
 ## CodeGraph (F0 baseline)
 - Pinned at **`f72c9d2`** (v1.6.2). Line refs in the design doc assume this commit.

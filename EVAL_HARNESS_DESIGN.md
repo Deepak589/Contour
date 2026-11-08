@@ -18,7 +18,7 @@
 |---|---|---|
 | D1 | No `temperature`; pin `output_config.effort` and API version | Non-default sampling values return 400 on Sonnet 5.5 and Haiku 5.5, and any value does on API version `2026-10-21`. Effort defaults differ by model, so unpinned effort would confound H3. |
 | D2 | `seed` is a replicate label | No seed parameter is documented. Repeated calls are the only source of variance. |
-| D3 | Primary model is Sonnet 5.5, small model is Haiku 5.5 | The old "frontier" label was wrong for Sonnet. Changing model is a config edit. |
+| D3 | Final runs: primary model is Sonnet 5.5, small model is Haiku 5.5. Development uses Mistral (D19) | The old "frontier" label was wrong for Sonnet. Changing model is a config edit. |
 | D4 | 600 tasks × 2 replicates for the core block; about 13,600 runs | Tasks add more power than replicates. The verified pool is larger than the old 150–300 plan. |
 | D5 | H6 margin is set at Gate G3 from measured discordance (default 4 pp) | −2 pp is effectively unprovable: it needs about 1,100–4,400 tasks at the corrected α. |
 | D6 | Confirmatory family cut to 3 tests; paired, repo-clustered bootstrap replaces McNemar | Seed-averaged differences are not binary, and tasks cluster by repo. |
@@ -33,7 +33,10 @@
 | D15 | Merkle re-index moved to Future Work | Experiments use immutable per-commit indexes. A per-file content-hash cache is enough. |
 | D16 | `rel` is normalised per query to (0, 1] | Otherwise a broad query spreads `π_s` thinly and can fall below λ everywhere, returning only the floor handles. |
 | D17 | `dev150` is repo-disjoint from `test_core` by default | Fitted parameters can't learn test repos. S0-3 checks the pool can support it; the fallback is `holdout_repos`. |
-| D18 | Model claims are limited to Sonnet 5.5 and Haiku 5.5 | Opus 5.5 and Fable 5.1 aren't tested, so results say nothing about them. |
+| D18 | Model claims are limited to the models in the final matrix (Sonnet 5.5 and Haiku 5.5 unless D3 changes) | Opus 5.5, Fable 5.1 and Mistral aren't in the final matrix, so results say nothing about them. Mistral dev runs are never reported as results. |
+| D19 | Provider-neutral `LLMClient`; Mistral is the development backend | Mistral is cheap for building and debugging the MCP service, tool loop, logging and graders on `dev50`. Adapters convert at the boundary; the agent, graders and store see only neutral types. Adding a provider is one adapter class. |
+| D20 | Delivered tokens and `T_loc` use one fixed reference tokenizer for every provider; provider-reported usage is used for billing only | Tokenizers differ across providers, so per-provider counts would make `T_loc` incomparable across models. |
+| D21 | Provider, model ID and SDK version are part of `config_hash`; one results set never mixes providers | Stops dev runs leaking into final results. |
 
 ---
 
@@ -206,7 +209,7 @@ flowchart TB
     end
 
     RUN --> RunScope
-    AGT <--> API[Claude API]
+    AGT <--> API[LLMClient: Mistral dev / Claude final]
     C <-->|unix socket| EMB[Shared query-embedding service]
     RunScope --> TRJ[Trajectory JSONL]
     TRJ --> GRD[Graders + exposure detector]
@@ -476,7 +479,7 @@ Contour/
 │   ├── infra/
 │   │   ├── sandbox/docker_env.py
 │   │   ├── storage/sqlite_store.py
-│   │   ├── llm/{client.py,cache.py,tokens.py,pricing.py}
+│   │   ├── llm/{client.py,mistral.py,anthropic.py,cache.py,tokens.py,pricing.py}
 │   │   └── analysis/{bootstrap.py,tests.py,plots.py,report.py}
 │   └── plugins/
 │       ├── agents/mini_agent.py     # controlled loop + forced-compaction mode
@@ -826,8 +829,8 @@ L0 LLM summaries · learned edge weights · embedding fine-tuning · question-ty
 |---|---|---|---|
 | Language | Python 3.12 | Already installed; best fit for numeric work and MCP | — |
 | Packaging | `uv` + `uv.lock` | Already installed; exact reproducible environments | pip + requirements |
-| LLM | `anthropic` Python SDK (`AsyncAnthropic`), manual tool loop | Exact per-step usage and message control | Tool Runner, LangGraph, Managed Agents |
-| Models | `claude-sonnet-5-5`, `claude-haiku-5-5` | §0 D3 | — |
+| LLM | Own `LLMClient` protocol with adapters: `mistralai` SDK (dev), `anthropic` SDK `AsyncAnthropic` (final); manual tool loop | Swappable providers; exact per-step usage and message control (D19) | Tool Runner, LangGraph, LiteLLM, Managed Agents |
+| Models | Final: `claude-sonnet-5-5`, `claude-haiku-5-5`. Dev: Mistral (Devstral), pinned ID | §0 D3, D19 | — |
 | Tool protocol | `mcp` Python SDK, stdio | Upstream CodeGraph already speaks it; one path for all variants | In-process tools for some variants |
 | Schemas | Pydantic v2 | Validation, frozen models, hashing | dataclasses |
 | CLI / config | Typer, PyYAML | Small and typed | Hydra |
@@ -848,12 +851,19 @@ L0 LLM summaries · learned edge weights · embedding fine-tuning · question-ty
 | CI | GitHub Actions: lint, types, tests, no API key | Repo is already on GitHub | — |
 | Task runner | `just` | Short, documented commands | Make on Windows |
 
+### Dev backend rules (Mistral; confirm at S0)
+- Pin the model ID and `mistralai` SDK version in `uv.lock` and config.
+- `tool_choice` stays `auto`. Map `finish_reason` to the neutral stop reasons; keep the raw value for health metrics.
+- Parse tool arguments defensively. Malformed JSON is logged as a tool-format error, not a retrieval failure.
+- No prompt caching or effort parameter: `Capabilities` flags turn these off; cache fields are logged as 0.
+- Check whether the free tier covers `dev50` before paying.
+
 ### API rules (from the current Claude API guide; confirm at S0)
 - Send no `temperature`, `top_p` or `top_k`.
 - Set `output_config={"effort": "medium"}` on every call.
 - Leave thinking at its default. Thinking tokens count in output.
 - `tool_choice` stays `auto`, because forced tool use returns 400 on Sonnet 5.5. Give `submit_locations` a strict schema.
-- Use `count_tokens` for token counts, never `tiktoken`.
+- Use `count_tokens` for token counts, never `tiktoken`. Delivered tokens and `T_loc` still use the D20 reference tokenizer.
 - Check `stop_reason` for `refusal` and `max_tokens` before reading content.
 - Read `cache_read_input_tokens` and `cache_creation_input_tokens` from usage.
 - Do not configure server-side fallbacks.
