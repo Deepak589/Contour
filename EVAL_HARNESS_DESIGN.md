@@ -35,7 +35,7 @@
 | D17 | `dev150` is repo-disjoint from `test_core` by default | Fitted parameters can't learn test repos. S0-3 checks the pool can support it; the fallback is `holdout_repos`. |
 | D18 | Model claims are limited to the models in the final matrix (Sonnet 5.5 and Haiku 5.5 unless D3 changes) | Opus 5.5, Fable 5.1 and Mistral aren't in the final matrix, so results say nothing about them. Mistral dev runs are never reported as results. |
 | D19 | Provider-neutral `LLMClient`; Mistral is the development backend | Mistral is cheap for building and debugging the MCP service, tool loop, logging and graders on `dev50`. Adapters convert at the boundary; the agent, graders and store see only neutral types. Adding a provider is one adapter class. |
-| D20 | Delivered tokens and `T_loc` use one fixed reference tokenizer for every provider; provider-reported usage is used for billing only | Tokenizers differ across providers, so per-provider counts would make `T_loc` incomparable across models. |
+| D20 | Delivered tokens and `T_loc` use one fixed reference tokenizer for every provider: `count_tokens` on `claude-sonnet-5-5` at the pinned API version. Provider-reported usage is used for billing only | Tokenizers differ across providers, so per-provider counts would make `T_loc` incomparable across models. Using the final primary model's counter keeps §13's `count_tokens` calibration and the no-`tiktoken` rule. Mistral dev runs need an Anthropic key to compute `T_loc`; without one it is logged as null. |
 | D21 | Provider, model ID and SDK version are part of `config_hash`; one results set never mixes providers | Stops dev runs leaking into final results. |
 
 ---
@@ -830,7 +830,7 @@ L0 LLM summaries · learned edge weights · embedding fine-tuning · question-ty
 | Language | Python 3.12 | Already installed; best fit for numeric work and MCP | — |
 | Packaging | `uv` + `uv.lock` | Already installed; exact reproducible environments | pip + requirements |
 | LLM | Own `LLMClient` protocol with adapters: `mistralai` SDK (dev), `anthropic` SDK `AsyncAnthropic` (final); manual tool loop | Swappable providers; exact per-step usage and message control (D19) | Tool Runner, LangGraph, LiteLLM, Managed Agents |
-| Models | Final: `claude-sonnet-5-5`, `claude-haiku-5-5`. Dev: Mistral (Devstral), pinned ID | §0 D3, D19 | — |
+| Models | Final: `claude-sonnet-5-5`, `claude-haiku-5-5`. Dev: `mistral-small-2603` (Devstral is not available on the current key), `mistralai` 3.7.0 | §0 D3, D19 | — |
 | Tool protocol | `mcp` Python SDK, stdio | Upstream CodeGraph already speaks it; one path for all variants | In-process tools for some variants |
 | Schemas | Pydantic v2 | Validation, frozen models, hashing | dataclasses |
 | CLI / config | Typer, PyYAML | Small and typed | Hydra |

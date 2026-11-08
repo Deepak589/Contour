@@ -53,9 +53,9 @@ Ruff skips `.claude/` and `*.md`. CI runs the same checks with no API key.
 
 ## LLM providers (D19–D21)
 - All model calls go through the `LLMClient` protocol (`evalh/infra/llm/`). Agent, graders and store see only neutral types.
-- **Dev backend: Mistral** (pinned model ID + `mistralai` SDK version). Use it on `dev50` to build and debug. Mistral runs are never reported as results.
+- **Dev backend: Mistral** `mistral-small-2603`, `mistralai` 3.7.0 (pinned in `uv.lock`). Use it on `dev50` to build and debug. Mistral runs are never reported as results.
 - **Final runs:** the pinned Claude models above. One results set never mixes providers.
-- Delivered tokens and `T_loc` use one fixed reference tokenizer for every provider; provider usage is for billing only.
+- Delivered tokens and `T_loc` use one reference tokenizer for every provider: `count_tokens` on `claude-sonnet-5-5`. Provider usage is for billing only. No Anthropic key → `T_loc` is null.
 - Provider, model ID and SDK version are part of `config_hash`.
 
 ## CodeGraph (F0 baseline)
